@@ -1,0 +1,7 @@
+# Core database dependencies
+asyncpg>=0.27.0   # Asynchronous PostgreSQL client
+inflect>=6.0.4    # For handling singular/plural forms in column matching
+
+# Utility dependencies
+pytest-asyncio>=0.21.0  # For testing async code
+pytest>=7.3.1           # Testing framework 
