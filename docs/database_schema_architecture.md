@@ -51,9 +51,9 @@ Key tables in the public schema include:
 ```sql
 -- Projects table to track all projects
 CREATE TABLE projects (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
-    client_id INTEGER NOT NULL,
+    client_id UUID NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     status VARCHAR(50) NOT NULL DEFAULT 'active',
@@ -62,7 +62,7 @@ CREATE TABLE projects (
 
 -- Object models for content generation
 CREATE TABLE object_models (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
     version VARCHAR(50) NOT NULL,
     structure JSONB NOT NULL,
@@ -72,20 +72,20 @@ CREATE TABLE object_models (
 
 -- Prompt templates for LLM interactions
 CREATE TABLE prompts (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
     template TEXT NOT NULL,
     parameters JSONB,
-    object_model_id INTEGER REFERENCES object_models(id),
+    object_model_id UUID REFERENCES object_models(id),
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- LLM API usage tracking
 CREATE TABLE llm_usage (
-    id SERIAL PRIMARY KEY,
-    project_id INTEGER REFERENCES projects(id),
-    prompt_id INTEGER REFERENCES prompts(id),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID REFERENCES projects(id),
+    prompt_id UUID REFERENCES prompts(id),
     tokens_in INTEGER NOT NULL,
     tokens_out INTEGER NOT NULL,
     model VARCHAR(100) NOT NULL,
@@ -95,7 +95,7 @@ CREATE TABLE llm_usage (
 
 -- Client information
 CREATE TABLE clients (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
     contact_email VARCHAR(255),
     api_key VARCHAR(255),
@@ -112,10 +112,10 @@ Key tables in the project-specific schemas include:
 ```sql
 -- Generated content for this project
 CREATE TABLE contents (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title VARCHAR(255),
     body TEXT NOT NULL,
-    object_model_id INTEGER NOT NULL,  -- References public.object_models
+    object_model_id UUID NOT NULL,  -- References public.object_models
     metadata JSONB,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -131,7 +131,7 @@ CREATE TABLE metadata (
 
 -- Project-specific vocabulary
 CREATE TABLE vocabulary (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     term VARCHAR(255) NOT NULL,
     definition TEXT NOT NULL,
     category VARCHAR(100),
@@ -140,10 +140,10 @@ CREATE TABLE vocabulary (
 
 -- Project-adapted prompt components
 CREATE TABLE prompt_components (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
     content TEXT NOT NULL,
-    base_prompt_id INTEGER,  -- References public.prompts
+    base_prompt_id UUID,  -- References public.prompts
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -215,10 +215,10 @@ class SchemaSetup:
         # Create tables in the new schema
         self.db.execute(f"""
             CREATE TABLE IF NOT EXISTS {schema_name}.contents (
-                id SERIAL PRIMARY KEY,
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 title VARCHAR(255),
                 body TEXT NOT NULL,
-                object_model_id INTEGER NOT NULL,
+                object_model_id UUID NOT NULL,
                 metadata JSONB,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP

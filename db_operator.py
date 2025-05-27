@@ -645,17 +645,23 @@ class DBOperator(DBOperatorFormatting, DBTestSupportMixin):
         created = await db.insert("users", {"name": "John", "email": "john@example.com"})
     """
     
-    def __init__(self, enable_logging: bool = True, verbose_logging: bool = False):
+    def __init__(self, enable_logging: bool = True, verbose_logging: bool = False, test_mode: Optional[str] = None):
         """
         Initialize the database operator.
         
         Args:
             enable_logging: Whether to log operations
             verbose_logging: Whether to log detailed data
+            test_mode: Testing mode to use, options:
+                       - None: Production mode, uses real database
+                       - "e2e": End-to-end testing, uses test database with real connections
+                       - "mock": Mock mode, uses schema-aware mock data without database
         """
         DBOperatorFormatting.__init__(self, enable_logging, verbose_logging)
         self._connector = DBConnector()
         self._table_columns_cache = {}  # Cache for table column information
+        self.test_mode = test_mode
+        self.schema_registry = None  # For mock mode, will hold schema information
         
     async def _get_table_columns(self, table: str, schema: str = "public") -> List[str]:
         """
@@ -1291,4 +1297,113 @@ class DBOperator(DBOperatorFormatting, DBTestSupportMixin):
             
     async def close(self):
         """Close the database connection."""
-        await self._connector.close() 
+        await self._connector.close()
+
+    async def execute(self, query: str, params: Optional[Tuple] = None, 
+                     fetch_val: bool = False, fetch_row: bool = False,
+                     fetch_all: bool = False, schema: Optional[str] = None) -> Any:
+        """
+        Execute a raw SQL query and optionally fetch results.
+        
+        This method forwards to the underlying connector's execute method with
+        support for fetching results in various formats.
+        
+        Args:
+            query: SQL query to execute
+            params: Optional query parameters
+            fetch_val: If True, return a single value
+            fetch_row: If True, return a single row
+            fetch_all: If True, return all rows
+            schema: Optional schema name to set before query
+            
+        Returns:
+            Query result based on the fetch parameters
+            
+        Raises:
+            QueryError: If the query execution fails
+        """
+        return await self._connector.execute(
+            query, 
+            params, 
+            fetch_val=fetch_val, 
+            fetch_row=fetch_row, 
+            fetch_all=fetch_all, 
+            schema=schema
+        )
+
+    async def run_sql_script(self, script: str, script_name: str = "SQL Script") -> None:
+        """
+        Execute a multi-statement SQL script, handling COPY statements correctly.
+        
+        This method parses and executes an SQL script containing multiple statements,
+        including special handling for COPY FROM STDIN blocks with embedded data.
+        
+        Args:
+            script: SQL script text to execute
+            script_name: Name of the script for logging purposes
+            
+        Raises:
+            QueryError: If a statement fails to execute
+        """
+        logger.info(f"Executing {script_name} with {script.count(';')} statements")
+        
+        # Split the script into statements, preserving COPY blocks
+        statements = []
+        current_statement = []
+        in_copy_block = False
+        copy_data = []
+        
+        # Process script line by line to handle COPY blocks
+        for line in script.splitlines():
+            stripped_line = line.strip()
+            
+            # Handle COPY block start
+            if not in_copy_block and stripped_line.startswith("COPY ") and "FROM stdin;" in stripped_line.lower():
+                in_copy_block = True
+                current_statement.append(line)
+            # Handle end of COPY block
+            elif in_copy_block and stripped_line == "\\.":
+                # Complete the COPY statement
+                copy_data.append(line)  # Include the terminator
+                copy_text = "\n".join(copy_data)
+                current_statement.append(copy_text)
+                
+                # Add the complete COPY statement
+                statements.append("\n".join(current_statement))
+                
+                # Reset for next statement
+                current_statement = []
+                copy_data = []
+                in_copy_block = False
+            # Collect data lines within COPY block
+            elif in_copy_block:
+                copy_data.append(line)
+            # Handle normal statement end
+            elif not in_copy_block and stripped_line.endswith(";"):
+                current_statement.append(line)
+                statements.append("\n".join(current_statement))
+                current_statement = []
+            # Collect normal statement lines
+            elif not in_copy_block:
+                if stripped_line and not stripped_line.startswith("--"):
+                    current_statement.append(line)
+        
+        # Execute each statement
+        for i, statement in enumerate(statements):
+            if not statement.strip():
+                continue
+                
+            try:
+                # Log first 100 chars of each statement (for debugging)
+                preview = statement.replace("\n", " ")[:100] + ("..." if len(statement) > 100 else "")
+                logger.debug(f"Executing statement {i+1}/{len(statements)}: {preview}")
+                
+                await self._connector.execute(statement)
+                
+            except Exception as e:
+                error_msg = f"Error executing statement {i+1}/{len(statements)}: {str(e)}"
+                logger.error(error_msg)
+                logger.error(f"Statement: {statement}")
+                raise QueryError(error_msg) from e
+                
+        logger.info(f"Successfully executed {script_name} with {len(statements)} statements") 
